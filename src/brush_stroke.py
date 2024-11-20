@@ -81,38 +81,17 @@ def rigid_body_transform(a, xt, yt, anchor_x, anchor_y):
     return A
 
 class RigidBodyTransformation(nn.Module):
-    def __init__(self, a, xt, yt):
+    def __init__(self, a, xt, yt, init_differentiably=False, device='cuda'):
         super(RigidBodyTransformation, self).__init__()
-        # weights = torch.zeros(3)
-        # weights[0] = a
-        # weights[1] = xt
-        # weights[2] = yt
-        # weights.requires_grad = True
-        # self.weights = nn.Parameter(weights)
 
-        # t = torch.ones(1)
-        # t[0] = xt
-        # t.requires_grad = True
-        # self.xt = nn.Parameter(t)
-
-        # t = torch.ones(1)
-        # t[0] = yt
-        # t.requires_grad = True
-        # self.yt = nn.Parameter(t)
-
-
-        # t = torch.ones(1)
-        # t[0] = a
-        # t.requires_grad = True
-        # self.a = nn.Parameter(t)
-
-        # self.xt.requires_grad = True
-        # self.yt.requires_grad = True
-        # self.a.requires_grad = True
-
-        self.xt = nn.Parameter(torch.ones(1)*xt)
-        self.yt = nn.Parameter(torch.ones(1)*yt)
-        self.a = nn.Parameter(torch.ones(1)*a)
+        if init_differentiably:
+            self.xt = xt
+            self.yt = yt 
+            self.a = a
+        else:
+            self.xt = nn.Parameter(torch.ones(1, device=device)*xt)
+            self.yt = nn.Parameter(torch.ones(1, device=device)*yt)
+            self.a = nn.Parameter(torch.ones(1, device=device)*a)
 
     def forward(self, x):
         h, w = x.shape[2], x.shape[3]
@@ -131,6 +110,7 @@ class BrushStroke(nn.Module):
                 color=None, 
                 ink=False,
                 a=None, xt=None, yt=None,
+                init_differentiably=False,
                 device='cuda'):
         super(BrushStroke, self).__init__()
 
@@ -140,41 +120,54 @@ class BrushStroke(nn.Module):
         self.MAX_ALPHA = opt.MAX_ALPHA
         self.MAX_BEND = opt.MAX_BEND
 
-        if color is None: color=(torch.rand(3).to(device)*.4)+0.3
-        if a is None: a=(torch.rand(1)*2-1)*3.14
-        if xt is None: xt=(torch.rand(1)*2-1)
-        if yt is None: yt=(torch.rand(1)*2-1)
+
+        if init_differentiably:
+            # self.xt = xt # Range [0,1]
+            # self.yt = yt # Range [0,1]
+            # self.a = a # Range [-2pi,2pi]
+            self.transformation = RigidBodyTransformation(a, xt, yt, 
+                    init_differentiably=init_differentiably)
+
+            self.stroke_length = stroke_length
+            self.stroke_z = stroke_z
+            self.stroke_bend = stroke_bend
+            self.stroke_alpha = stroke_alpha
+        else:
+            if color is None: color=(torch.rand(3).to(device)*.4)+0.3
+            if a is None: a=(torch.rand(1, device=device)*2-1)*3.14
+            if xt is None: xt=(torch.rand(1, device=device)*2-1)
+            if yt is None: yt=(torch.rand(1, device=device)*2-1)
 
 
-        if stroke_length is None: stroke_length=torch.rand(1)*self.MAX_STROKE_LENGTH
-        if stroke_z is None: stroke_z = torch.rand(1).clamp(self.MIN_STROKE_Z, 0.95)
-        if stroke_alpha is None: stroke_alpha=(torch.rand(1)*2-1)*self.MAX_ALPHA
-        if stroke_bend is None: stroke_bend = (torch.rand(1)*2 - 1) * self.MAX_BEND
-        stroke_bend = min(stroke_bend, stroke_length) if stroke_bend > 0 else max(stroke_bend, -1*stroke_length)
+            if stroke_length is None: stroke_length=torch.rand(1, device=device)*self.MAX_STROKE_LENGTH
+            if stroke_z is None: stroke_z = torch.rand(1, device=device).clamp(self.MIN_STROKE_Z, 0.95)
+            if stroke_alpha is None: stroke_alpha=(torch.rand(1, device=device)*2-1)*self.MAX_ALPHA
+            if stroke_bend is None: stroke_bend = (torch.rand(1, device=device)*2 - 1) * self.MAX_BEND
+            stroke_bend = min(stroke_bend, stroke_length) if stroke_bend > 0 else max(stroke_bend, -1*stroke_length)
 
-        self.transformation = RigidBodyTransformation(a, xt, yt)
-        
-        self.stroke_length = stroke_length
-        self.stroke_z = stroke_z
-        self.stroke_bend = stroke_bend
-        self.stroke_alpha = stroke_alpha
+            self.transformation = RigidBodyTransformation(a, xt, yt)
+            
+            self.stroke_length = stroke_length
+            self.stroke_z = stroke_z
+            self.stroke_bend = stroke_bend
+            self.stroke_alpha = stroke_alpha
 
-        self.stroke_length.requires_grad = True
-        self.stroke_z.requires_grad = True
-        self.stroke_bend.requires_grad = True
-        self.stroke_alpha.requires_grad = True
+            self.stroke_length.requires_grad = True
+            self.stroke_z.requires_grad = True
+            self.stroke_bend.requires_grad = True
+            self.stroke_alpha.requires_grad = True
 
-        self.stroke_length = nn.Parameter(self.stroke_length)
-        self.stroke_z = nn.Parameter(self.stroke_z)
-        self.stroke_bend = nn.Parameter(self.stroke_bend)
-        self.stroke_alpha = nn.Parameter(self.stroke_alpha)
+            self.stroke_length = nn.Parameter(self.stroke_length)
+            self.stroke_z = nn.Parameter(self.stroke_z)
+            self.stroke_bend = nn.Parameter(self.stroke_bend)
+            self.stroke_alpha = nn.Parameter(self.stroke_alpha)
 
         if not ink:
             self.color_transform = nn.Parameter(color)
         else:
             self.color_transform = torch.zeros(3).to(device)
 
-    def forward(self, h, w, param2img):
+    def forward(self, h, w, param2img, zoom_factor=1):
         # # Do rigid body transformation
         # full_param = torch.zeros((1,16)).to(self.stroke_length.device)
         
@@ -214,6 +207,23 @@ class BrushStroke(nn.Module):
         if stroke.shape[2] != h or stroke.shape[3] != w:
             stroke = T.Resize((h, w), bicubic, antialias=True)(stroke)
 
+        if zoom_factor > 1:
+            # Calculate the new dimensions
+            new_height = int(stroke.shape[2] / zoom_factor)
+            new_width = int(stroke.shape[3] / zoom_factor)
+
+            # Create a center crop transform
+            center_crop = T.CenterCrop((new_height, new_width))
+
+            # Apply the transform to the image
+            stroke = center_crop(stroke)
+            stroke = T.Resize((h, w), bicubic, antialias=True)(stroke)
+
+        if zoom_factor > 1:
+            h2,w2 = int(h/2), int(w/2)
+            stroke[:,0,h2-5:h2+5, w2-5:w2+5] *= 0
+            # stroke[:,0,h2-5:h2+5, w2-5:w2+5] += 0.15
+
         # x = self.transformation(strokes[self.stroke_ind].permute(2,0,1).unsqueeze(0))
         # from plan import show_img
         # show_img(stroke)
@@ -233,6 +243,8 @@ class BrushStroke(nn.Module):
         # print('forawrd brush', x.shape)
         # Color change
         x = torch.cat((x[:,:3]*0 + self.color_transform[None,:,None,None], x[:,3:]), dim=1)
+
+
         return x
 
     def make_valid(stroke):

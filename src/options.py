@@ -119,6 +119,35 @@ class Options(object):
         parser.add_argument("--app", type=str, nargs='*',
             default="app run", help='Argument is not used, but is allowed for flask compatability')
 
+
+        # Stroke Predictor Arguments
+        parser.add_argument("--n_predicted_strokes", type=int,
+            default=5, help='Number of strokes the stroke predictor should output')
+        parser.add_argument("--n_predicted_strokes_low", type=int,
+            default=None, help='Number of strokes the stroke predictor should output')
+        parser.add_argument("--n_predicted_strokes_high", type=int,
+            default=None, help='Number of strokes the stroke predictor should output')
+        parser.add_argument("--sp_training_batch_size", type=int,
+            default=24, help='Number of times to predict in a row')
+        parser.add_argument("--n_gt_strokes", type=int,
+            default=5, help='Number of strokes to add to target images')
+        parser.add_argument("--continue_training", type=str,
+            default=None, help='Path to a .pth model to continue training')
+        parser.add_argument("--num_prediction_rounds", type=int,
+            default=20, help='Number of times to predict in a row')
+        parser.add_argument('--predict_many_then_optimize', action='store_true',
+            help='If set, then predict --num_prediction_rounds of --n_predicted_strokes then optimize the final canvas.')
+        parser.add_argument("--sp_lr", type=float,
+            default=1e-4, help='initial learning rate for stroke predictor')
+        parser.add_argument("--sp_no_pix_loss", action='store_true',
+            help='')
+        parser.add_argument("--sp_stroke_loss_weight", type=float,
+            default=0.5, help='')
+        parser.add_argument("--sp_cofrida_loss_weight", type=float,
+            default=0.5, help='')
+        parser.add_argument('--sp_predict_path', action='store_true',
+            help='If set, then predict trajectory not the latent.')
+
         return parser 
 
     def gather_options(self):

@@ -18,13 +18,13 @@ class Painting(nn.Module):
 
         self.background_img = background_img
 
-        if self.background_img.shape[1] == 3: # add alpha channel
+        if self.background_img is not None and self.background_img.shape[1] == 3: # add alpha channel
             t =  torch.zeros((1,1,self.background_img.shape[2],self.background_img.shape[3])).to(device)
             # t[:,:3] = self.background_img
             self.background_img = torch.cat((self.background_img, t), dim=1)
 
         if brush_strokes is None:
-            self.brush_strokes = nn.ModuleList([BrushStroke(opt) for _ in range(n_strokes)])
+            self.brush_strokes = nn.ModuleList([BrushStroke(opt, ink=opt.ink) for _ in range(n_strokes)])
         else:
             self.brush_strokes = nn.ModuleList(brush_strokes)
         
@@ -66,7 +66,7 @@ class Painting(nn.Module):
         return position_opt, rotation_opt, color_opt, bend_opt, length_opt, thickness_opt
 
 
-    def forward(self, h, w, use_alpha=True, return_alphas=False, opacity_factor=1.0, efficient=False):
+    def forward(self, h, w, use_alpha=True, return_alphas=False, opacity_factor=1.0, efficient=False, zoom_factor=1):
         if self.background_img is None:
             canvas = torch.ones((1,4,h,w)).to(device)
         else:
@@ -77,7 +77,7 @@ class Painting(nn.Module):
         if return_alphas: stroke_alphas = []
 
         for brush_stroke in self.brush_strokes:
-            single_stroke = brush_stroke(h,w, self.param2img)
+            single_stroke = brush_stroke(h,w, self.param2img, zoom_factor=zoom_factor)
 
             if mostly_opaque: single_stroke[:,3][single_stroke[:,3] > 0.5] = 1.
             if return_alphas: stroke_alphas.append(single_stroke[:,3:])
